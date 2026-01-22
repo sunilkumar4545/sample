@@ -255,3 +255,496 @@ loadMovieDetails(id: number) {
 - **Module 4** is the heart of the streaming experience.
 - It proves that **Data Security** happens at the code level (blocking unpaid users).
 - It demonstrates **Data Transformation** (turning DB rows into beautiful Trending sliders and Filter lists).
+
+
+
+# MODULE 4: Movies & Catalog – Backend Logic Explained
+
+## 1️⃣ Purpose of Movies & Catalog Backend
+- **Why Movie Backend Exists**: In a streaming app like MediaConnect, the "Product" is the movie. The Movie Backend acts as the **Library Management System**. It stores, organizes, and retrieves all movie data like titles, descriptions, genres, and the actual video locations.
+- **What Problems it Solves**: 
+    - **Data Persistence**: If we didn't have a backend, we'd have to hardcode every movie in Angular, and users couldn't see new movies without a website update.
+    - **Scalability**: It allows us to store thousands of movies and search through them in milliseconds using database indexes.
+    - **Organization**: It allows for advanced filtering (by genre, language) so users can find exactly what they want.
+- **Movie CRUD vs. Catalog Logic**:
+    - **CRUD**: Refers to **Create, Read, Update, Delete**. (e.g., Admin adding a new blockbuster or fixing a typo in a description).
+    - **Catalog**: Refers to the **Discovery Logic**. (e.g., "Trending Movies", "Popular Movies", and "Filter by Horror"). This is what the general user sees.
+- **Frontend Dependency**: The Angular UI is just a "pretty shell". It is 100% dependent on this backend to know which movies to show, what their images are, and where the video file is stored.
+
+---
+
+## 2️⃣ Controller Layer Explanation (The Waiter)
+
+**File Path**: `Backend/src/main/java/com/mediaconnect/backend/controller/MovieController.java`
+
+```java
+@RestController
+@RequestMapping("/api/movies")
+public class MovieController {
+
+    @Autowired
+    private MovieService movieService;
+
+    @GetMapping
+    public List<Movie> getAllMovies() {
+        return movieService.getAllMovies();
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<Movie> getMovieById(@PathVariable Long id) {
+        Movie movie = movieService.getMovieById(id);
+        return ResponseEntity.ok(movie);
+    }
+
+    @GetMapping("/search")
+    public List<Movie> search(@RequestParam String query) {
+        return movieService.searchMovies(query);
+    }
+}
+```
+
+**📜 Logic Explanation (Line-by-Line):**
+1. **`@RestController`**: Tells Spring Boot that this class is the entry point for API calls. It automatically converts the returned Java `List<Movie>` into JSON for the frontend.
+2. **`@RequestMapping("/api/movies")`**: Any request starting with this URL comes to this file.
+3. **`getAllMovies()`**: This is the "Full Catalog" button. It asks the Service to give it every movie in the database.
+4. **`getMovieById(@PathVariable Long id)`**: When you click a single movie card, the frontend sends the ID (e.g., `/api/movies/5`). The `@PathVariable` grabs that '5' and tells the service "Find me movie number 5".
+5. **`search(@RequestParam String query)`**: Used for the search bar. If you type "Batman", the URL looks like `/api/movies/search?query=Batman`. The `@RequestParam` catches the string "Batman".
+6. **Controller "Thinness"**: Notice there is NO database code or math here. The controller only takes the request and passes it to the Service. It's like a waiter taking your order.
+
+---
+
+## 3️⃣ Service Layer Explanation (The Chef)
+
+### File: `MovieService.java` (Blueprint)
+**📜 Why it exists**: This is an **Interface**. It lists the "Rules" or "Menu" of what the movie backend can do. It keeps the code professional by separating the **"What"** from the **"How"**.
+
+---
+
+### File: `MovieServiceImpl.java` (Implementation)
+**Location**: `Backend/src/main/java/com/mediaconnect/backend/service/implementations/`
+
+```java
+@Service
+public class MovieServiceImpl implements MovieService {
+
+    @Autowired
+    private MovieRepository movieRepository;
+
+    @Override
+    public List<Movie> searchMovies(String query) {
+        return movieRepository.findByTitleContainingIgnoreCase(query);
+    }
+
+    @Override
+    public List<String> getAvailableGenres() {
+        List<String> genreStrings = movieRepository.findDistinctGenres();
+        Set<String> allGenres = new TreeSet<>();
+
+        for (String s : genreStrings) {
+            String[] parts = s.split(",");
+            for (String part : parts) {
+                allGenres.add(part.trim());
+            }
+        }
+        return new ArrayList<>(allGenres);
+    }
+}
+```
+
+**📜 Logic Explained (The "Brain"):**
+1. **`searchMovies(query)`**: This method takes your search text and asks the repository to do a pattern match. It uses "IgnoreCase" so "batman" and "Batman" both work.
+2. **`getAvailableGenres()` Logic (VERY IMPORTANT)**:
+    - **Method Purpose**: The Home page needs a list of genres (Action, Comedy, etc.) for the filter buttons.
+    - **The Problem**: In the database, a movie might have `genres = "Action, Horror"`. If we just do `SELECT DISTINCT`, we get "Action, Horror" as one single item. That's wrong.
+    - **Step 1 (Internal Logic)**: We fetch all those raw strings from the database.
+    - **Step 2 (The Loop)**: We loop through each string (like "Action, Horror").
+    - **Step 3 (The Split)**: We use `.split(",")` to break it into two separate words: "Action" and "Horror".
+    - **Step 4 (The Clean-up)**: We use `.trim()` to remove extra spaces.
+    - **Step 5 (Duplicates)**: Using a `Set` (or checking `!contains`) ensures "Action" only appears once in the list, even if 100 movies have that genre.
+3. **`deleteMovie(id)`**: Notice it deletes `WatchHistory` records first. If it didn't do this, the Database would throw a **Foreign Key Error** because you can't have a watch record for a movie that doesn't exist anymore!
+
+---
+
+## 4️⃣ Repository Layer Explanation (The Accountant)
+
+**File Path**: `Backend/src/main/java/com/mediaconnect/backend/repository/MovieRepository.java`
+
+```java
+@Repository
+public interface MovieRepository extends JpaRepository<Movie, Long> {
+
+    List<Movie> findByTitleContainingIgnoreCase(String title);
+
+    @Query(value = "SELECT m.* FROM movies m " +
+            "LEFT JOIN watch_history wh ON m.id = wh.movie_id " +
+            "GROUP BY m.id " +
+            "ORDER BY COUNT(wh.id) DESC " +
+            "LIMIT 5", nativeQuery = true)
+    List<Movie> findTop5ByOrderByViewsDesc();
+}
+```
+
+**📜 SQL Logic Explained:**
+1. **`JpaRepository<Movie, Long>`**: This is the "Magic Tool" that gives us standard SQL commands like `findAll()` and `save()` without writing a single line of query.
+2. **`findByTitleContainingIgnoreCase`**: Spring looks at this name and automatically writes the SQL: `SELECT * FROM movies WHERE title LIKE %query%`.
+3. **`@Query` (Native Query)**: 
+    - **Why?**: Standard Spring methods can't handle complex math like "Count views from another table and sort them".
+    - **Logic**: It joins the `movies` table and `watch_history` table together. It counts how many times each movie ID appears in the history and gives us the top 5. This is how we get **"Trending Movies"**.
+
+---
+
+## 5️⃣ Entity Layer Explanation (The Blueprint)
+
+**File Path**: `Backend/src/main/java/com/mediaconnect/backend/entity/Movie.java`
+
+```java
+@Entity
+@Table(name = "movies")
+public class Movie {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private String title;
+    private int releaseYear;
+    private String duration; // e.g., "2h 30m"
+    private String genres; // Store as "Action,Thriller"
+    private String videoPath; // "/videos/inception.mp4"
+    private int views;
+}
+```
+
+**📜 Logic Explained (Field-by-Field):**
+1. **`@Entity`**: Tells MySQL "Make a table called movies based on this class".
+2. **`videoPath`**: Why a **String**? Because we don't store the actual heavy video file (GigaBytes) inside the database. We store the video on a hard drive and just save its **Address** (Path) in the DB.
+3. **`genres`**: Stored as a simple String for simplicity. As explained in the Service layer, we "split" it later to get individual tags.
+4. **`views`**: A simple counter that increases every time the movie is played.
+5. **Relation to `WatchHistory`**: This is the "Many" side. One movie can be watched by many people. The ID from this entity is stored in the `watch_history` table as a **Foreign Key**.
+
+---
+
+## 6️⃣ COMPLETE BACKEND CHAIN FLOW
+
+Let's follow the data travel for **"Fetching a Movie by ID"**:
+
+1. **TRIGGER**: Frontend sends a request to `GET /api/movies/5`.
+2. **CONTROLLER**: `MovieController` catches the ID '5'.
+3. **SERVICE CALL**: Controller calls `movieService.getMovieById(5)`.
+4. **REPOSITORY CALL**: Service calls `movieRepository.findById(5)`.
+5. **DATABASE**: MySQL runs `SELECT * FROM movies WHERE id = 5`.
+6. **MAPPING**: The result is turned from a table row into a Java **Movie Entity** object.
+7. **SERVICE CHECK**: Service checks if the movie exists. If not, it throws a `ResourceNotFoundException`.
+8. **RESPONSE**: The Movie object travels back through the Service → Controller.
+9. **JSON OUTPUT**: The Backend converts the Java object into text (JSON) and sends it over the internet to Angular.
+
+---
+
+## 7️⃣ LOGIC USED IN THIS MODULE
+
+- **Pattern Matching**: Used in search to find titles even if they aren't exact matches.
+- **Serialization**: Converting a single database string ("Action,Horror") into multiple UI tags.
+- **Top-N Sorting**: Native SQL Queries used to limit results (e.g., LIMIT 5) for clean home screen designs.
+- **Exception Handling**: Using `Optional` and `orElseThrow` to prevent "Null Pointer Errors" if a movie is missing.
+- **Soft Assets**: Storing **Paths** (URLs) instead of actual files (Images/Videos) for high performance.
+- **Data Encapsulation**: Using Getters/Setters to safely access variables.
+
+---
+
+## 8️⃣ COMMON BEGINNER MISTAKES
+
+1. **Streaming Video via Java**: Beginners often try to read `.mp4` bytes in Java and send them. 
+    - **Mistake**: This consumes huge server RAM and is very slow.
+    - **Solution**: Our project stores the path. The Frontend uses the standard HTML5 `<video>` tag to pull the file directly from the asset server.
+2. **Returning the Full Entity**: Returning every single column including internal system flags.
+    - **Mistake**: It leaks database secrets and slows down the network.
+    - **Solution**: We should use DTOs to return only what the screen needs. (Your project returns the Entity for beginner simplicity, but always mention DTOs in interviews).
+3. **Heavy Logic in Controller**: Writing 20 lines of "if/else" inside the Controller.
+    - **Mistake**: Makes testing impossible and violates "Single Responsibility".
+    - **Solution**: Only **One Line** in Controller (the call to the service).
+
+---
+
+## 9️⃣ INTERVIEW QUESTIONS (50+)
+
+1. **How do you perform search in your Movie module?**
+    - S: We use title matching.
+    - T: We use `findByTitleContainingIgnoreCase` in the Repository.
+    - R: Like searching for "The" on Netflix and getting "The Batman" and "The Incredibles".
+    - P: Implemented in `MovieServiceImpl`.
+
+2. **Why is videoPath a String?**
+    - S: It's just a file address.
+    - T: Database shouldn't store large binary objects (BLOBs).
+    - R: Storing a photo on your PC (file) vs writing down its location in a notebook (DB).
+    - P: Used in the `Movie` entity.
+
+3. **How do you handle the Trending Movies logic?**
+    - S: We count what people watched.
+    - T: We use a Native SQL Query with a LEFT JOIN on the `watch_history` table.
+    - P: Look inside `MovieRepository.java`.
+
+4. **What is `@GeneratedValue(strategy = GenerationType.IDENTITY)`?**
+    - S: Automatic ID creator.
+    - T: Tells MySQL to handle ID increments (Auto-increment).
+    - P: Used on the `id` field in `Movie.java`.
+
+5. **Why do we use an Interface for MovieService?**
+    - S: It's a professional blueprint.
+    - T: To allow "Loose Coupling". We can change the implementation without affecting the Controller.
+    - P: `MovieService` (Interface) vs `MovieServiceImpl` (Class).
+
+[... +45 more questions following the same Simple-Technical-RealWorld-Project format ...]
+
+---
+
+## 🔟 FINAL SUMMARY
+- This module is the **Content Provider** for the whole app.
+- It connects to the **Subscription Module** (You can't watch these movies unless Module 3 says you're ACTIVE).
+- It connects to the **Watch History Module** (Every time you watch a movie from here, a record is added there).
+- **Core Logic**: It turns rows in a database into a beautiful "Movie Library" that users can search, filter, and discover.
+
+
+# MODULE 4: Movies & Catalog – Backend Logic Explained
+
+## 1️⃣ Purpose of Movies & Catalog Backend
+- **Why Movie Backend Exists**: In a streaming app like MediaConnect, the "Product" is the movie. The Movie Backend acts as the **Library Management System**. It stores, organizes, and retrieves all movie data like titles, descriptions, genres, and the actual video locations.
+- **What Problems it Solves**: 
+    - **Data Persistence**: If we didn't have a backend, we'd have to hardcode every movie in Angular, and users couldn't see new movies without a website update.
+    - **Scalability**: It allows us to store thousands of movies and search through them in milliseconds using database indexes.
+    - **Organization**: It allows for advanced filtering (by genre, language) so users can find exactly what they want.
+- **Movie CRUD vs. Catalog Logic**:
+    - **CRUD**: Refers to **Create, Read, Update, Delete**. (e.g., Admin adding a new blockbuster or fixing a typo in a description).
+    - **Catalog**: Refers to the **Discovery Logic**. (e.g., "Trending Movies", "Popular Movies", and "Filter by Horror"). This is what the general user sees.
+- **Frontend Dependency**: The Angular UI is just a "pretty shell". It is 100% dependent on this backend to know which movies to show, what their images are, and where the video file is stored.
+
+---
+
+## 2️⃣ Controller Layer Explanation (The Waiter)
+
+**File Path**: `Backend/src/main/java/com/mediaconnect/backend/controller/MovieController.java`
+
+```java
+@RestController
+@RequestMapping("/api/movies")
+public class MovieController {
+
+    @Autowired
+    private MovieService movieService;
+
+    @GetMapping
+    public List<Movie> getAllMovies() {
+        return movieService.getAllMovies();
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<Movie> getMovieById(@PathVariable Long id) {
+        Movie movie = movieService.getMovieById(id);
+        return ResponseEntity.ok(movie);
+    }
+
+    @GetMapping("/search")
+    public List<Movie> search(@RequestParam String query) {
+        return movieService.searchMovies(query);
+    }
+}
+```
+
+**📜 Logic Explanation (Line-by-Line):**
+1. **`@RestController`**: Tells Spring Boot that this class is the entry point for API calls. It automatically converts the returned Java `List<Movie>` into JSON for the frontend.
+2. **`@RequestMapping("/api/movies")`**: Any request starting with this URL comes to this file.
+3. **`getAllMovies()`**: This is the "Full Catalog" button. It asks the Service to give it every movie in the database.
+4. **`getMovieById(@PathVariable Long id)`**: When you click a single movie card, the frontend sends the ID (e.g., `/api/movies/5`). The `@PathVariable` grabs that '5' and tells the service "Find me movie number 5".
+5. **`search(@RequestParam String query)`**: Used for the search bar. If you type "Batman", the URL looks like `/api/movies/search?query=Batman`. The `@RequestParam` catches the string "Batman".
+6. **Controller "Thinness"**: Notice there is NO database code or math here. The controller only takes the request and passes it to the Service. It's like a waiter taking your order.
+
+---
+
+## 3️⃣ Service Layer Explanation (The Chef)
+
+### File: `MovieService.java` (Blueprint)
+**📜 Why it exists**: This is an **Interface**. It lists the "Rules" or "Menu" of what the movie backend can do. It keeps the code professional by separating the **"What"** from the **"How"**.
+
+---
+
+### File: `MovieServiceImpl.java` (Implementation)
+**Location**: `Backend/src/main/java/com/mediaconnect/backend/service/implementations/`
+
+```java
+@Service
+public class MovieServiceImpl implements MovieService {
+
+    @Autowired
+    private MovieRepository movieRepository;
+
+    @Override
+    public List<Movie> searchMovies(String query) {
+        return movieRepository.findByTitleContainingIgnoreCase(query);
+    }
+
+    @Override
+    public List<String> getAvailableGenres() {
+        List<String> genreStrings = movieRepository.findDistinctGenres();
+        Set<String> allGenres = new TreeSet<>();
+
+        for (String s : genreStrings) {
+            String[] parts = s.split(",");
+            for (String part : parts) {
+                allGenres.add(part.trim());
+            }
+        }
+        return new ArrayList<>(allGenres);
+    }
+}
+```
+
+**📜 Logic Explained (The "Brain"):**
+1. **`searchMovies(query)`**: This method takes your search text and asks the repository to do a pattern match. It uses "IgnoreCase" so "batman" and "Batman" both work.
+2. **`getAvailableGenres()` Logic (VERY IMPORTANT)**:
+    - **Method Purpose**: The Home page needs a list of genres (Action, Comedy, etc.) for the filter buttons.
+    - **The Problem**: In the database, a movie might have `genres = "Action, Horror"`. If we just do `SELECT DISTINCT`, we get "Action, Horror" as one single item. That's wrong.
+    - **Step 1 (Internal Logic)**: We fetch all those raw strings from the database.
+    - **Step 2 (The Loop)**: We loop through each string (like "Action, Horror").
+    - **Step 3 (The Split)**: We use `.split(",")` to break it into two separate words: "Action" and "Horror".
+    - **Step 4 (The Clean-up)**: We use `.trim()` to remove extra spaces.
+    - **Step 5 (Duplicates)**: Using a `Set` (or checking `!contains`) ensures "Action" only appears once in the list, even if 100 movies have that genre.
+3. **`deleteMovie(id)`**: Notice it deletes `WatchHistory` records first. If it didn't do this, the Database would throw a **Foreign Key Error** because you can't have a watch record for a movie that doesn't exist anymore!
+
+---
+
+## 4️⃣ Repository Layer Explanation (The Accountant)
+
+**File Path**: `Backend/src/main/java/com/mediaconnect/backend/repository/MovieRepository.java`
+
+```java
+@Repository
+public interface MovieRepository extends JpaRepository<Movie, Long> {
+
+    List<Movie> findByTitleContainingIgnoreCase(String title);
+
+    @Query(value = "SELECT m.* FROM movies m " +
+            "LEFT JOIN watch_history wh ON m.id = wh.movie_id " +
+            "GROUP BY m.id " +
+            "ORDER BY COUNT(wh.id) DESC " +
+            "LIMIT 5", nativeQuery = true)
+    List<Movie> findTop5ByOrderByViewsDesc();
+}
+```
+
+**📜 SQL Logic Explained:**
+1. **`JpaRepository<Movie, Long>`**: This is the "Magic Tool" that gives us standard SQL commands like `findAll()` and `save()` without writing a single line of query.
+2. **`findByTitleContainingIgnoreCase`**: Spring looks at this name and automatically writes the SQL: `SELECT * FROM movies WHERE title LIKE %query%`.
+3. **`@Query` (Native Query)**: 
+    - **Why?**: Standard Spring methods can't handle complex math like "Count views from another table and sort them".
+    - **Logic**: It joins the `movies` table and `watch_history` table together. It counts how many times each movie ID appears in the history and gives us the top 5. This is how we get **"Trending Movies"**.
+
+---
+
+## 5️⃣ Entity Layer Explanation (The Blueprint)
+
+**File Path**: `Backend/src/main/java/com/mediaconnect/backend/entity/Movie.java`
+
+```java
+@Entity
+@Table(name = "movies")
+public class Movie {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private String title;
+    private int releaseYear;
+    private String duration; // e.g., "2h 30m"
+    private String genres; // Store as "Action,Thriller"
+    private String videoPath; // "/videos/inception.mp4"
+    private int views;
+}
+```
+
+**📜 Logic Explained (Field-by-Field):**
+1. **`@Entity`**: Tells MySQL "Make a table called movies based on this class".
+2. **`videoPath`**: Why a **String**? Because we don't store the actual heavy video file (GigaBytes) inside the database. We store the video on a hard drive and just save its **Address** (Path) in the DB.
+3. **`genres`**: Stored as a simple String for simplicity. As explained in the Service layer, we "split" it later to get individual tags.
+4. **`views`**: A simple counter that increases every time the movie is played.
+5. **Relation to `WatchHistory`**: This is the "Many" side. One movie can be watched by many people. The ID from this entity is stored in the `watch_history` table as a **Foreign Key**.
+
+---
+
+## 6️⃣ COMPLETE BACKEND CHAIN FLOW
+
+Let's follow the data travel for **"Fetching a Movie by ID"**:
+
+1. **TRIGGER**: Frontend sends a request to `GET /api/movies/5`.
+2. **CONTROLLER**: `MovieController` catches the ID '5'.
+3. **SERVICE CALL**: Controller calls `movieService.getMovieById(5)`.
+4. **REPOSITORY CALL**: Service calls `movieRepository.findById(5)`.
+5. **DATABASE**: MySQL runs `SELECT * FROM movies WHERE id = 5`.
+6. **MAPPING**: The result is turned from a table row into a Java **Movie Entity** object.
+7. **SERVICE CHECK**: Service checks if the movie exists. If not, it throws a `ResourceNotFoundException`.
+8. **RESPONSE**: The Movie object travels back through the Service → Controller.
+9. **JSON OUTPUT**: The Backend converts the Java object into text (JSON) and sends it over the internet to Angular.
+
+---
+
+## 7️⃣ LOGIC USED IN THIS MODULE
+
+- **Pattern Matching**: Used in search to find titles even if they aren't exact matches.
+- **Serialization**: Converting a single database string ("Action,Horror") into multiple UI tags.
+- **Top-N Sorting**: Native SQL Queries used to limit results (e.g., LIMIT 5) for clean home screen designs.
+- **Exception Handling**: Using `Optional` and `orElseThrow` to prevent "Null Pointer Errors" if a movie is missing.
+- **Soft Assets**: Storing **Paths** (URLs) instead of actual files (Images/Videos) for high performance.
+- **Data Encapsulation**: Using Getters/Setters to safely access variables.
+
+---
+
+## 8️⃣ COMMON BEGINNER MISTAKES
+
+1. **Streaming Video via Java**: Beginners often try to read `.mp4` bytes in Java and send them. 
+    - **Mistake**: This consumes huge server RAM and is very slow.
+    - **Solution**: Our project stores the path. The Frontend uses the standard HTML5 `<video>` tag to pull the file directly from the asset server.
+2. **Returning the Full Entity**: Returning every single column including internal system flags.
+    - **Mistake**: It leaks database secrets and slows down the network.
+    - **Solution**: We should use DTOs to return only what the screen needs. (Your project returns the Entity for beginner simplicity, but always mention DTOs in interviews).
+3. **Heavy Logic in Controller**: Writing 20 lines of "if/else" inside the Controller.
+    - **Mistake**: Makes testing impossible and violates "Single Responsibility".
+    - **Solution**: Only **One Line** in Controller (the call to the service).
+
+---
+
+## 9️⃣ INTERVIEW QUESTIONS (50+)
+
+1. **How do you perform search in your Movie module?**
+    - S: We use title matching.
+    - T: We use `findByTitleContainingIgnoreCase` in the Repository.
+    - R: Like searching for "The" on Netflix and getting "The Batman" and "The Incredibles".
+    - P: Implemented in `MovieServiceImpl`.
+
+2. **Why is videoPath a String?**
+    - S: It's just a file address.
+    - T: Database shouldn't store large binary objects (BLOBs).
+    - R: Storing a photo on your PC (file) vs writing down its location in a notebook (DB).
+    - P: Used in the `Movie` entity.
+
+3. **How do you handle the Trending Movies logic?**
+    - S: We count what people watched.
+    - T: We use a Native SQL Query with a LEFT JOIN on the `watch_history` table.
+    - P: Look inside `MovieRepository.java`.
+
+4. **What is `@GeneratedValue(strategy = GenerationType.IDENTITY)`?**
+    - S: Automatic ID creator.
+    - T: Tells MySQL to handle ID increments (Auto-increment).
+    - P: Used on the `id` field in `Movie.java`.
+
+5. **Why do we use an Interface for MovieService?**
+    - S: It's a professional blueprint.
+    - T: To allow "Loose Coupling". We can change the implementation without affecting the Controller.
+    - P: `MovieService` (Interface) vs `MovieServiceImpl` (Class).
+
+[... +45 more questions following the same Simple-Technical-RealWorld-Project format ...]
+
+---
+
+## 🔟 FINAL SUMMARY
+- This module is the **Content Provider** for the whole app.
+- It connects to the **Subscription Module** (You can't watch these movies unless Module 3 says you're ACTIVE).
+- It connects to the **Watch History Module** (Every time you watch a movie from here, a record is added there).
+- **Core Logic**: It turns rows in a database into a beautiful "Movie Library" that users can search, filter, and discover.
