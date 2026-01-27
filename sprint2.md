@@ -215,8 +215,6 @@ Your `pom.xml` shows version `3.3.0`. This ensures your project is future-proof,
 
 ---
 
----
-
 ## 6️⃣ Building a Simple REST Controller
 
 ### 💻 Code from Your Project
@@ -351,7 +349,7 @@ public class GlobalExceptionHandler {
 *   **@RestControllerAdvice**: Combines `@ControllerAdvice` + `@ResponseBody`. It intercepts exceptions thrown by *any* controller.
 *   **@ExceptionHandler**: specific method that runs when a specific Exception class is thrown.
 
-### � Why is it used?
+### 🧐 Why is it used?
 Without this, if your `UserService` throws `ResourceNotFoundException`, the user would see a chaotic 500 Internal Server Error trace. With this, they see a clean JSON: `{"status": 404, "message": "User not found"}`. It centralizes error logic, avoiding `try-catch` blocks in every controller method.
 
 ### ⚙️ Internal Working
@@ -373,7 +371,129 @@ Without this, if your `UserService` throws `ResourceNotFoundException`, the user
 
 ---
 
-## �🧠 Quick Recap (Sharpen Your Memory)
+## 9️⃣ RESTful Resource Representation & DTOs
+
+### 💻 Standard Industry Code (DTO Pattern)
+**Why not use Entities directly?**
+If you expose `@Entity User`, you might accidentally expose the `password` field or creating an infinite loop with `List<Order>`.
+
+**The Solution: Data Transfer Object (DTO)**
+```java
+public class UserDTO {
+    // 1. Decoupling: Field names can differ from DB
+    @JsonProperty("user_full_name") 
+    private String fullName;
+
+    // 2. Security: Hide sensitive data (password is missing)
+    private String email;
+
+    // 3. Validation: Ensure data integrity at the entry gate
+    @NotNull(message = "Email cannot be null")
+    @Email(message = "Invalid email format")
+    private String email;
+}
+```
+
+### 🔵 Technical Explanation
+**DTO (Data Transfer Object)** is a design pattern used to transfer data between subsystems (e.g., Backend to Frontend).
+*   **Decoupling**: The API schema (`UserDTO`) is independent of the Database Schema (`UserEntity`). You can refactor the DB without breaking the API.
+*   **Serialization**: Annotations like `@JsonProperty` (Jackson) control how Java Objects become JSON. `private String name` -> `{"name": "..."}`.
+*   **Versioning**: As APIs evolve, you may need `v1/UserDTO` and `v2/UserDTO`.
+
+### 🧐 Customizing JSON (Jackson)
+*   `@JsonProperty("name")`: Renames a field in the JSON output.
+*   `@JsonIgnore`: Completely omits a sensitive field (like `password` or `internalFlags`) from the JSON.
+*   `@JsonInclude(JsonInclude.Include.NON_NULL)`: Skips fields that are `null` to save bandwidth.
+
+### ❓ API Versioning Strategies
+1.  **URI Versioning** (Most Common): `/api/v1/users` vs `/api/v2/users`. Easy to see/cache.
+2.  **Request Parameter**: `/api/users?version=1`.
+3.  **Header Versioning**: `Accept: application/vnd.company.app-v1+json`. "Purest" REST but harder to test in browser.
+
+### 🙋‍♂️ Interview Q&A
+
+**Q1: Why should I never return an Entity from a Controller?**
+> **Answer:**
+> 1.  **Security**: You might leak sensitive columns (password, salt).
+> 2.  **Performance**: Entities often have Lazy Loaded relationships. Serializing them can trigger "N+1 Queries" or `LazyInitializationException`.
+> 3.  **Coupling**: Changing a DB column name would break the Frontend.
+
+**Q2: How do you map Entity to DTO?**
+> **Answer:**
+> *   **Manual**: Simple getters/setters (Good for small projects).
+> *   **ModelMapper / MapStruct**: Libraries that automate mapping based on field names (Standard in Enterprise).
+
+---
+
+## 🔟 RESTful CRUD & Optimistic Locking
+
+### 💻 Standard Industry Code (Robust CRUD)
+
+**Handling Concurrent Updates (The "Lost Update" Problem)**
+Imagine two admins, Alice and Bob, open the same Movie to edit.
+1. Alice reads Title="Avatar".
+2. Bob reads Title="Avatar".
+3. Alice saves Title="Avatar 2".
+4. Bob saves Title="Avatar Remastered".
+*Result:* Alice's work is overwritten silently.
+
+**The Solution: Optimistic Locking (`@Version`)**
+```java
+@Entity
+public class Movie {
+    @Id
+    private Long id;
+    
+    @Version // The Magic Annotation
+    private Integer version; 
+}
+```
+
+**Controller Handling:**
+```java
+@PutMapping("/{id}")
+public ResponseEntity<?> update(@RequestBody MovieDTO dto) {
+    try {
+        service.update(dto);
+        return ResponseEntity.ok().build();
+    } catch (ObjectOptimisticLockingFailureException e) {
+        // 409 Conflict
+        return ResponseEntity.status(HttpStatus.CONFLICT).body("Data was modified by someone else. Please refresh.");
+    }
+}
+```
+
+### 🔵 Technical Explanation
+**CRUD (Create, Read, Update, Delete)** relies on proper HTTP Verb usage:
+*   `POST` (Create): **Not Idempotent**. Sending it twice creates two records.
+*   `PUT` (Update): **Idempotent**. Replaces the target resource entirely.
+*   `PATCH` (Partial Update): **Not Idempotent** (usually). Updates specific fields.
+
+**Optimistic Locking**: Instead of identifying the row by ID (`WHERE id=1`), Hibernate identifies it by ID + Version (`WHERE id=1 AND version=5`).
+*   If the version in DB is 5, it succeeds and increments to 6.
+*   If someone else bumped it to 6 already, the query (`WHERE id=1 AND version=5`) finds 0 rows. Hibernate throws `OptimisticLockException`.
+
+### 🧐 Input Validation (`@Valid`)
+Never trust the client.
+*   Add **Jakarta Validation** annotations (`@NotNull`, `@Size`, `@Pattern`) to your DTO fields.
+*   Add `@Valid` to your Controller method: `public void create(@Valid @RequestBody UserDTO dto)`.
+*   If validation fails, Spring throws `MethodArgumentNotValidException` (400 Bad Request).
+
+### 🙋‍♂️ Interview Q&A
+
+**Q1: What is the difference between PUT and PATCH?**
+> **Answer:**
+> *   **PUT**: Replaces the *entire* resource. If you send `{ "name": "New" }` and forget the "email" field, email becomes null.
+> *   **PATCH**: Updates *only* the fields sent. Useful for huge resources.
+
+**Q2: Explain Optimistic vs Pessimistic Locking.**
+> **Answer:**
+> *   **Pessimistic**: Locks the database row (`SELECT ... FOR UPDATE`) as soon as you read it. No one else can read/write until you finish. Safe but slow.
+> *   **Optimistic**: Allows everyone to read/write, but checks for conflicts *at the very end* using a version number. Better for web apps (Stateless).
+
+---
+
+## 🧠 Quick Recap (Sharpen Your Memory)
 
 | Topic | 🔵 Technical Concept (The Keyword) |
 | :--- | :--- |
@@ -384,6 +504,9 @@ Without this, if your `UserService` throws `ResourceNotFoundException`, the user
 | **Request Handling** | `@PathVariable` (Identity), `@RequestParam` (Filter), `@RequestBody` (Payload). |
 | **Response Handling** | `ResponseEntity` (Status, Headers, Body). |
 | **Exception Handling** | `@RestControllerAdvice`, `@ExceptionHandler` (AOP Pattern). |
+| **DTO Pattern** | **Decoupling**, **Security**, **@JsonProperty**, **MapStruct**. |
+| **Concurrency** | **Optimistic Locking** (`@Version`), **409 Conflict**. |
+| **Validation** | `@Valid`, `@NotNull`, **MethodArgumentNotValidException**. |
 | **Boot 3 Changes** | **Jakarta EE** (new pkg), **Java 17** (Records), **Native Images**. |
 
 ---
