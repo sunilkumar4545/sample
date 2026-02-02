@@ -501,3 +501,190 @@ this.authService.login(credentials).subscribe({
 | **`*.service.ts` (Frontend)** | **Carrier** | Carries the HTTP error response to the component. |
 | **`*.component.ts` (Frontend)** | **Display** | Subscribes to the error and shows it to the user. |
 
+
+## 7. Interview Questions & Answers
+
+### A. General & Architectural (Watch History)
+
+**Q1: Can you explain the high-level architecture of the "Continue Watching" feature?**
+**A:** "The feature uses a periodic synchronization strategy. The Frontend tracks the video's `currentTime` using the HTML5 `timeupdate` event. To avoid overloading the server, I implemented **debouncing** to only send a POST request every 5 seconds or when the user pauses. The Backend receives this timestamp, checks if a record exists for that user+movie combination, and either updates the existing record or creates a new one. This data is then used to populate the 'Continue Watching' row on the dashboard."
+
+**Q2: Why did you use `setTimeout` (Debouncing) instead of sending a request on every `timeupdate`?**
+**A:** "The `timeupdate` event fires roughly 4 times per second. Sending an HTTP request at that frequency would flood the server (DDoS style) and cause massive performance issues. Debouncing allows me to aggregate these updates and only persist the state when meaningful progress has been made (e.g., every 5-10 seconds), significantly reducing network traffic."
+
+**Q3: How do you handle the case where a user pauses the video?**
+**A:** "I listen specifically for the `(pause)` event on the video tag. When this triggers, I bypass the debounce timer and force an immediate save to the backend. This ensures that even if the 5-second timer hasn't finished, the exact stop time is captured."
+
+**Q4: How does the application know where to resume playback from?**
+**A:** "When the `MovieDetailComponent` initializes, it makes a GET request to the `/progress` endpoint. If the backend returns a history record with `progressSeconds > 0`, I use the video element's API (`video.currentTime = ...`) to seek to that timestamp immediately."
+
+**Q5: Is the communication between Frontend and Backend RESTful?**
+**A:** "Yes. We use standard HTTP methods: `GET` for retrieving history/progress, and `POST` for creating/updating the progress resource. The API is stateless, as the authentication is handled via JWT tokens in the header."
+
+### B. Backend (Spring Boot & JPA)
+
+**Q6: What is the relationship between `User`, `Movie`, and `WatchHistory` in your database?**
+**A:** "It is a Many-to-One relationship. A `WatchHistory` record belongs to *one* User and *one* Movie. However, a single User can have *many* history records (for different movies), and a Movie can appear in *many* users' histories. In JPA terms, the `WatchHistory` entity has `@ManyToOne` fields for both `user` and `movie`."
+
+**Q7: Explain the logic behind `saveProgress` in the Service layer.**
+**A:** "The service implements an 'Upsert' (Update or Insert) pattern. First, it queries the repository using `findByUserIdAndMovieId`.
+*   If a record is found, it updates the `progressSeconds` and `lastWatched` timestamp on the existing entity.
+*   If null, it fetches the full User and Movie entities and creates a new `WatchHistory` object.
+Finally, it calls `.save()`, which commits the changes to the database."
+
+**Q8: Why do you store `lastWatched` as a separate field?**
+**A:** "This is crucial for the 'Continue Watching' UI. We want to show the movies he user watched *most recently* at the beginning of the list. We use a repository method `findByUserIdOrderByLastWatchedDesc` to achieve this sorting efficiently at the database level."
+
+**Q9: How exactly does Spring Data JPA know how to execute `findByUserIdAndMovieId`?**
+**A:** "This is a **Derived Query Method**. Spring Data parses the method name. It looks for a field named `user` and `movie` in the Entity, and expects their IDs as arguments. It automatically generates the JPQL/SQL equivalent: `SELECT * FROM watch_history WHERE user_id = ? AND movie_id = ?`."
+
+**Q10: What HTTP status code do you return when saving progress?**
+**A:** "I return `200 OK` (via `ResponseEntity.ok().build()`) to indicate success. If the user or movie didn't exist (edge case), I might throw a RuntimeException which my Global Exception Handler would catch and convert to a 404 or 400."
+
+**Q11: Can you explain the annotation `@RestController`?**
+**A:** "It's a convenience annotation that combines `@Controller` and `@ResponseBody`. It tells Spring that this class handles web requests and that the return values of methods should be written directly to the HTTP response body (usually as JSON), rather than resolving to a view/template."
+
+**Q12: What triggers the database transaction in your Service?**
+**A:** "By default, Spring Boot methods are not transactional unless annotated or inside a generic Service context. However, the `save()` method of the `JpaRepository` is transactional by default. So when I call `repository.save()`, a transaction is opened and committed."
+
+**Q13: How do you handle potential concurrency issues (two requests saving at once)?**
+**A:** "For a single user watching a video, requests are sequential or debounced, so collisions are rare. However, if they were common, JPA's `@Version` annotation (Optimistic Locking) or database-level row locking could be used. In this specific use case, since it's just updating 'last second watched', a 'last write wins' strategy is usually acceptable."
+
+**Q14: How does Dependency Injection work in your Controller?**
+**A:** "I use constructor or field injection (via `@Autowired`). Spring's IoC Container creates an instance of `WatchHistoryService` (a singleton bean) and injects it into `WatchHistoryController`. This creates loose coupling—the controller doesn't need to know *how* to create the service, it just uses it."
+
+**Q15: What is the purpose of the DTO (AnalyticsResponse) in the repo?**
+**A:** "We use DTOs (Data Transfer Objects) to shape data specifically for a response. In `findEngagementAnalytics`, we don't want to return raw database rows. We construct a custom object (Movie Title + Views Count) directly in the JPQL query to minimize data transfer and hide internal entity structure."
+
+### C. Frontend (Angular & TypeScript)
+
+**Q16: How do you listen for video events in Angular?**
+**A:** "I use Angular's event binding syntax in the template: `(eventName)='handler($event)'`. specifically `(timeupdate)`, `(pause)`, and `(ended)`. The `$event` object contains native DOM event data which I cast to `HTMLVideoElement` to access properties like `currentTime`."
+
+**Q17: What is TypeScript's role in the component?**
+**A:** "TypeScript adds type safety. For example, when I handle the video event, I cast the target: `const video = event.target as HTMLVideoElement`. This ensures I can only access valid properties like `.currentTime` or `.duration`, preventing runtime 'undefined' errors."
+
+**Q18: Explain the `OnInit` and `OnDestroy` lifecycle hooks.**
+**A:** 
+*   `ngOnInit`: Runs once when the component is created. I use it to fetch the saved progress (`loadLastWatchPosition`) and setup initial state.
+*   `ngOnDestroy`: Runs when the user navigates away. I use it to `clearTimeout` on my save timer. If I didn't, the timer might try to execute code after the component is destroyed, causing memory leaks or errors."
+
+**Q19: How do you handle the asynchronous nature of the HTTP call?**
+**A:** "I use RxJS `Observables`. The `HttpClient` returns an Observable. I `.subscribe()` to it. Code inside the `next:` block runs *only when* the data actually arrives from the server. This prevents the UI from freezing while waiting for the response."
+
+**Q20: Why did you use `.map()` in `loadUserData`?**
+**A:** "The API returns a complex nested object (`{ user: {...}, movie: {...}, progressSeconds: 120 }`). My view simply wants a list of movies with a progress bar. `.map()` allows me to flatten this into a cleaner format (`{ title: '...', progress: 120 }`) that is easier to use in the HTML template."
+
+**Q21: How does the `MovieCardComponent` receive data?**
+**A:** "It uses the `@Input()` decorator. The parent `HomeComponent` passes the movie object down via property binding: `[movie]='currentMovie'`. This creates a reusable component that doesn't care *where* the data comes from, only how to display it."
+
+**Q22: How would you debug if the video position isn't saving?**
+**A:** "I would check the Network tab in Chrome DevTools to see if the POST requests are being firing. If they are, I'd check the Payload to ensure `seconds` is correct. If they aren't firing, I'd add console logs in the `saveProgress` function to verify the `timeupdate` event and the debounce logic."
+
+**Q23: What is the purpose of `ChangeDetectorRef`?**
+**A:** "Sometimes, when updates happen asynchronously (like inside a `setTimeout` or an HTTP callback), Angular might not detect the change immediately. Calling `cdr.detectChanges()` forces Angular to check for updates and re-render the view, ensuring the UI stays in sync."
+
+### D. Exception Handling (Project Wide)
+
+**Q24: How do you handle exceptions in this project?**
+**A:** "We use a Global Exception Handler strategy using Spring's `@RestControllerAdvice`. Instead of try-catch blocks in every controller, exceptions (like `ResourceNotFoundException`) bubble up to this global handler, which formats them into a standard JSON `ErrorResponse`."
+
+**Q25: Why is AOP (Aspect Oriented Programming) relevant here?**
+**A:** "My Global Exception Handler IS an implementation of AOP. It is a 'Cross-Cutting Concern' that applies to *all* controllers without modifying their code. The Advice 'intercepts' the exception flow."
+
+**Q26: How does the frontend know an error occurred?**
+**A:** "The standard HTTP error codes (4xx, 5xx) are returned. In the Angular `.subscribe()` block, the `error:` callback is triggered instead of `next:`. We extract the error message from the JSON body and display it to the user."
+
+**Q27: What is `ResourceNotFoundException`?**
+**A:** "It is a custom RuntimeException class I created. I use it to semantically signal that a database lookup failed (e.g., User or Movie not found). It makes the code more readable than throwing generic Exceptions."
+
+### E. Scenario Based & System Design
+
+**Q28: If millions of users are watching, how would you scale this?**
+**A:** "Currently, we write to the DB every 5 seconds per user. This is write-heavy. To scale:
+1.  **Cache/Buffer:** Write updates to Redis first.
+2.  **Batch Processing:** A background worker flushes Redis to MySQL every few minutes (reducing DB I/O).
+3.  **Read Replicas:** Serve the 'Continue Watching' list from a Read Replica database."
+
+**Q29: What happens if the internet cuts out while watching?**
+**A:** "The frontend debouncer will still try to fire. The HTTP request will fail. We could implement a 'Retry Mechanism' or store the progress in `localStorage` temporarily and sync it when the connection returns (Offline Mode)."
+
+**Q30: How would you implement 'Mark as Watched'?**
+**A:** "In the `onMovieEnded` event, I would send a final request with a flag or set `progressSeconds` to 0 (or remove the record from 'Continue Watching' logic). I might also add a boolean field `isCompleted` to the `WatchHistory` entity."
+
+### F. Additional Technical Questions (Rapid Fire)
+
+**Q31: What is the difference between `@Component` and `@Service` in Spring?**
+**A:** "Functionally they are the same (both create beans). Semantically, `@Service` indicates the class holds business logic, while `@Component` is a generic stereotype."
+
+**Q32: What is the default scope of a Spring Bean?**
+**A:** "Singleton. One instance per application context."
+
+**Q33: How do you secure the `/save` endpoint?**
+**A:** "We use Spring Security with JWT. The request must include a valid Bearer Token in the header. The Security Filter Chain validates this token before the request ever reaches the Controller."
+
+**Q34: What is Lazy Loading in JPA?**
+**A:** "It means related data (like the User inside WatchHistory) isn't fetched from the DB until you actually call `.getUser()`. This saves performance. Eager loading fetches everything upfront."
+
+**Q35: Difference between `PUT` and `POST`?**
+**A:** "`PUT` is idempotent (sending the same request twice changes nothing after the first). `POST` is not. Typically `PUT` updates, `POST` creates. I used `POST` for `saveProgress` because it simplifies the Upsert logic, but `PUT` could technically be used for updating progress."
+
+**Q36: What is a Primary Key?**
+**A:** "A unique identifier for a row. in `WatchHistory`, `id` is the PK, generated automatically (`GenerationType.IDENTITY`)."
+
+**Q37: Explain `Optional<T>` usage in your Service.**
+**A:** "`userRepository.findById` returns an `Optional`. This forces me to handle the 'null' case explicitly (using `.orElse(null)` or `.orElseThrow()`), preventing NullPointerExceptions."
+
+**Q38: What port is your backend running on?**
+**A:** "Port 8081, as configured in `application.properties`."
+
+**Q39: How do you enable CORS?**
+**A:** "We used a configuration bean implementing `WebMvcConfigurer` to allow requests from `localhost:4200` (Angular) to access the backend APIs."
+
+**Q40: What is the `package.json` file?**
+**A:** "It acts as the manifest for the Frontend project, listing all dependencies (like Angular, Bootstrap) and commands (scripts) to run the app."
+
+**Q41: How does Angular routing work?**
+**A:** "The `RouterModule` maps URL paths (e.g., `/movie/:id`) to specific components (`MovieDetailComponent`). The `<router-outlet>` directive tells Angular where to insert the component."
+
+**Q42: What is a JWT?**
+**A:** "JSON Web Token. It's a stateless way to handle authentication. It contains a payload (User ID, Email) signed securely. The backend verifies the signature to trust the user."
+
+**Q43: How do you pass the JWT in requests?**
+**A:** "We use an HTTP Interceptor (`JwtInterceptor`) in Angular. It intercepts every outgoing request and clones it to add the `Authorization: Bearer <token>` header."
+
+**Q44: What is the 'Model' in your Frontend?**
+**A:** "They are TypeScript interfaces (e.g., `Movie`, `UserDTO`) that define the shape of valid data objects. They don't have logic, just structure."
+
+**Q45: Why use `@Autowired` on the constructor (Constructor Injection) vs fields?**
+**A:** "Constructor injection is generally preferred because it makes dependencies explicit and allows fields to be `final`, ensuring the bean is immutable."
+
+**Q46: What is Maven?**
+**A:** "The build tool and dependency manager for the Backend. It uses `pom.xml` to download libraries like Spring Web, JPA, and PostgreSQL Driver."
+
+**Q47: Can you explain the `pom.xml`?**
+**A:** "Project Object Model. It defines the project's meta-data, dependencies (Spring Boot Starter Web, Data JPA), and build plugins."
+
+**Q48: How do you check if a video is loaded?**
+**A:** "The HTML5 video API provides `readyState`. However, mostly we rely on events like `loadedmetadata` or `canplay`."
+
+**Q49: What is `ng-content`?**
+**A:** "Ideally used for Content Projection (passing HTML into a component from outside). We didn't use it here, but it's like a slot."
+
+**Q50: Why use `Long` instead of `long` for IDs?**
+**A:** "`Long` (wrapper class) is nullable, while `long` (primitive) defaults to 0. Database IDs can be null before persistence, so the Wrapper is safer for Entity IDs."
+
+**Q51: What happens if `save(entity)` is called on an entity with an ID?**
+**A:** "JPA interprets it as an Update (Merge) operation. If ID is null, it interprets it as an Insert (Persist)."
+
+**Q52: How do you prevent SQL Injection?**
+**A:** "By using JPA Repositories. Under the hood, they use PreparedStatement with parameterized queries, which sanitizes inputs automatically."
+
+**Q53: What is the difference between `interface` and `class` in TypeScript?**
+**A:** "Key difference: Interfaces vanish completely at runtime (they are dev-time only). Classes persist as JS functions. We use Interfaces for Models to save bundle size."
+
+**Q54: What is `ViewEncapsulation` in Angular?**
+**A:** "It determines if styles defined in a component affect *only* that component. The default is `Emulated`, meaning Angular adds unique attributes to elements so CSS doesn't leak out."
+
+**Q55: If you had to add 'User Reviews', how would you modify the DB?**
+**A:** "I would create a `Review` entity with `@ManyToOne` to User and `@ManyToOne` to Movie, plus `rating` and `comment` fields."
