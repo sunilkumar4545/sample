@@ -407,3 +407,97 @@ loadUserData() {
 *   **Dependency Injection:** `@Autowired` to connect Controller -> Service -> Repository.
 *   **REST API:** `@PostMapping`, `@GetMapping` to expose functionality.
 *   **Business Logic:** "Update if exists, Create if new" pattern.
+
+
+# Exception Handling Deep Dive
+> **Core Concept**: We use **Global Exception Handling** with Spring AOP (Aspect Oriented Programming) to catch errors centrally, rather than using `try-catch` blocks in every method. This ensures a consistent error response structure across the entire application.
+
+---
+
+## 1. The Communication Flow (How it travels)
+
+When an error occurs (e.g., "User not found"), the error travels through the layers of the application in a specific sequence.
+
+**Visual Flow:**
+`Service` (Throws Error) ➡️ `Controller` (Bubbles up) ➡️ `GlobalExceptionHandler` (Catches & Formats) ➡️ `JSON Response` (Sent over HTTP) ➡️ `Frontend Service` (Observable Error) ➡️ `Component` (Display to User)
+
+### Step 1: The Trigger (Backend Service)
+The logic starts in the Service layer. If a condition fails, we **throw** a custom exception.
+
+**File:** `Backend/.../UserServiceImpl.java` (Example)
+```java
+// Logic: If user is missing, STOP execution and Throw exception
+if (user == null) {
+    throw new ResourceNotFoundException("User not found with email: " + email);
+}
+```
+
+### Step 2: The Interception (Global Handler)
+The exception bubbles up. Instead of crashing the server, our `@RestControllerAdvice` class catches it. This is the **AOP** part—it "watches" all controllers.
+
+**File:** `Backend/.../exception/GlobalExceptionHandler.java`
+```java
+@RestControllerAdvice // <--- This annotation makes it a Global Listener
+public class GlobalExceptionHandler {
+
+    // This method only runs if a ResourceNotFoundException is thrown anywhere
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleResourceNotFound(ResourceNotFoundException ex) {
+        
+        // 1. Create a clean error object (DTO)
+        ErrorResponse error = new ErrorResponse(
+                HttpStatus.NOT_FOUND.value(), // 404
+                ex.getMessage());             // "User not found..."
+
+        // 2. Return it as proper JSON
+        return new ResponseEntity<>(error, HttpStatus.NOT_FOUND);
+    }
+}
+```
+
+### Step 3: The Custom Exception Class
+This is the simple class we define to signal specific errors.
+
+**File:** `Backend/.../exception/ResourceNotFoundException.java`
+```java
+@ResponseStatus(value = HttpStatus.NOT_FOUND) // Defaults to 404
+public class ResourceNotFoundException extends RuntimeException {
+    public ResourceNotFoundException(String message) {
+        super(message); // Pass message to parent RuntimeException
+    }
+}
+```
+
+### Step 4: Frontend Handling (Angular)
+The connection returns a `404` status with the JSON body. The Angular Service observes this failure.
+
+**File:** `Frontend/.../components/login/login.component.ts` (Example)
+```typescript
+this.authService.login(credentials).subscribe({
+    next: (data) => {
+        // Success logic
+    },
+    error: (err) => {
+        // STEP 4: Capture the error
+        // 'err.error' is the JSON object created in Step 2
+        console.error('Login Failed:', err.error.message);
+        
+        // Display to user
+        this.errorMessage = err.error.message; 
+    }
+});
+```
+
+---
+
+## 2. Summary of Files & Roles
+
+| File | Role | Responsibility |
+|------|------|----------------|
+| **`ResourceNotFoundException.java`** | **Signal** | Defines *what* went wrong (e.g., "Not Found"). |
+| **`GlobalExceptionHandler.java`** | **Handler** | Catches the signal, stops the crash, formats the JSON. |
+| **`ErrorResponse.java`** | **Format** | Defines the shape of the JSON ({ status, message, timestamp }). |
+| **`*Controller.java`** | **Pass-through** | The exception passes through here on its way to the Handler. |
+| **`*.service.ts` (Frontend)** | **Carrier** | Carries the HTTP error response to the component. |
+| **`*.component.ts` (Frontend)** | **Display** | Subscribes to the error and shows it to the user. |
+
