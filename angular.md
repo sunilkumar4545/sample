@@ -428,3 +428,21 @@ This guide covers core Angular concepts used in the **MediaConnect** project. Fo
 *   **Explanation**: Tells Angular to ONLY check this component for changes if an Input changes or a manual event/signal fires. It ignores global timers or unrelated events.
 *   **In MediaConnect**: Used in `ManageSubscriptionComponent` to optimize performance since it uses Signals.
 *   **🗣️ Interview Answer**: "`OnPush` strategy improves performance by detaching the component from the default change detection cycle. Angular will only re-render the component if its `@Input` references change or if a Signal inside it updates, rather than checking it on every single browser event."
+## 8. File Handling & Browser APIs (From Profile Download)
+
+### `Blob` & `window.URL.createObjectURL`
+*   **Explanation**: `Blob` means "Binary Large Object". It represents raw data like PDFs or Images. `createObjectURL` is a standard browser API that creates a temporary unique URL for a Blob kept in memory.
+*   **In MediaConnect**: Used in `ProfileComponent` for `downloadInvoice()`:
+    1.  `UserService` calls API with `{ responseType: 'blob' }`.
+    2.  `ProfileComponent` calls `window.URL.createObjectURL(blob)` to get a URL.
+    3.  A hidden `<a>` tag is created, clicked programmatically, and then removed.
+*   **Simple Example**:
+    ```typescript
+    const url = window.URL.createObjectURL(myBlob);
+    const link = document.createElement('a'); 
+    link.href = url;
+    link.download = 'invoice.txt';
+    link.click();
+    ```
+*   **🗣️ Interview Answer**: "To handle file downloads in Angular, we fetch the file as a Blob. Then, we use the browser's native `URL.createObjectURL` API to generate a temporary link, create a hidden anchor element, trigger a click event on it to start the download, and finally revoke the object URL to prevent memory leaks."
+
