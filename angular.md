@@ -148,3 +148,92 @@ Services use the **`@Injectable({ providedIn: 'root' })`** pattern, making them 
 | **Security** | Route Guards + Interceptors | `AuthGuard`, `JwtInterceptor` |
 | **Change Detection** | Default + OnPush | `ManageSubscriptionComponent` (OnPush) |
 | **Styling** | Component-Scoped CSS | All `.css` files |
+
+---
+
+## 8. Understanding Imports
+
+This section explains the purpose of the common `import` statements found in the codebase.
+
+### Core Angular Imports
+- **`import { Component } from '@angular/core';`**: The fundamental decorator used to define a class as an Angular component. It allows specifying the `selector`, `templateUrl`, `styleUrls`, and `standalone` properties.
+- **`import { Injectable } from '@angular/core';`**: Marks a class as available to be provided and injected as a dependency. Used in all services (e.g., `AuthService`).
+- **`import { inject } from '@angular/core';`**: A modern, functional way to inject dependencies without constructor arguments. Used in `ManageSubscriptionComponent` and Interceptors.
+- **`import { signal, computed } from '@angular/core';`**: Imports the Signals API, used for fine-grained reactivity in `ManageSubscriptionComponent`.
+- **`import { OnInit } from '@angular/core';`**: Lifecycle hook interface. Forces the class to implement `ngOnInit()`, which runs after the component initializes.
+
+### Common Angular Modules
+- **`import { CommonModule } from '@angular/common';`**: Exports all the basic Angular directives and pipes, such as `ngIf` (legacy), `ngFor` (legacy), `ngClass`, `DatePipe`, etc. In standalone components, this is often imported to access these utilities.
+- **`import { HttpClient } from '@angular/common/http';`**: The service used to perform HTTP requests. It returns Observables.
+- **`import { HttpInterceptorFn } from '@angular/common/http';`**: Type definition for writing functional HTTP interceptors (like `jwtInterceptor`).
+
+### Routing Imports
+- **`import { Router, RouterModule } from '@angular/router';`**: 
+  - `Router`: The service used to navigate programmatically (e.g., `this.router.navigate(['/home'])`).
+  - `RouterModule`: Used in the component's `imports` array to enable `routerLink` in the HTML.
+- **`import { ActivatedRoute } from '@angular/router';`**: Used to access route parameters (e.g., `movie/:id` in `MovieDetailComponent`).
+- **`import { Routes } from '@angular/router';`**: Type definition for the route configuration array in `app.routes.ts`.
+
+### Forms Imports
+- **`import { FormBuilder, FormGroup, Validators } from '@angular/forms';`**:
+  - `FormBuilder`: A service helper to create form controls easily.
+  - `FormGroup`: A collection of form controls (used in `LoginComponent`).
+  - `Validators`: Built-in validation functions (e.g., `.required`, `.email`).
+- **`import { ReactiveFormsModule, FormsModule } from '@angular/forms';`**: 
+  - `ReactiveFormsModule`: Needed for `[formGroup]` syntax.
+  - `FormsModule`: Needed for `[(ngModel)]` syntax (used in subscription forms).
+
+### RxJS Imports (Reactive Library)
+- **`import { Observable, BehaviorSubject } from 'rxjs';`**:
+  - `Observable`: Represents a stream of data over time (e.g., HTTP responses).
+  - `BehaviorSubject`: A type of Observable that holds a current value (used in `AuthService` state).
+- **`import { tap } from 'rxjs/operators';`**: operator used to perform side effects (like logging or saving to localStorage) without modifying the data stream.
+
+---
+
+## 9. Complete List of Angular Concepts Used in This Project
+
+Below is a quick-reference list of every Angular-specific concept, keyword, or decorator found in the source code.
+
+### Decorators
+- **`@Component`**: Defines a component.
+- **`@Injectable`**: Defines a service.
+- **`@Input`**: Allows data to flow *into* a component (used in `MovieCardComponent`).
+- **`@Output`**: Allows data to flow *out* of a component (imported but not actively used in the searched files).
+
+### Directives & Template Syntax
+- **`@if` / `@else`**: Control flow (Conditionally show elements).
+- **`@for`**: Control flow (Loop through lists).
+- **`[property]`**: Property binding (one-way, component to view).
+- **`(event)`**: Event binding (view to component).
+- **`[(ngModel)]`**: Two-way data binding.
+- **`ngClass`**: Dynamically add/remove CSS classes.
+- **`routerLink`**: Navigate to a new route.
+
+### Architecture & DI
+- **`standalone: true`**: Defines a component as standalone (no NgModule required).
+- **`imports: []`**: Array in `@Component` to bring in dependencies like `CommonModule`.
+- **`providers: []`**: Function in `app.config.ts` to register global services.
+- **`inject()`**: Functional dependency injection.
+
+### Routing
+- **`Routes`**: Array defining the application's navigation paths.
+- **`RouterOutlet`**: The placeholder where the routed component is rendered.
+- **`CanActivate`**: Interface for Route Guards.
+
+### Forms
+- **`ReactiveFormsModule`**: Module for model-driven forms.
+- **`FormGroup` / `FormControl`**: Classes representing form state.
+- **`Validators`**: Static methods for validation rules.
+
+### HTTP & Async
+- **`HttpClient`**: Service for making REST calls.
+- **`HttpInterceptorFn`**: Functional interceptor for Modifying requests.
+- **`Observable`**: Stream of async events.
+- **`subscribe()`**: Executing the Observable.
+
+### Modern Angular Features
+- **`signal()`**: Create a reactive state primitive.
+- **`computed()`**: Create a derived signal.
+- **`toSignal()`**: Convert an Observable to a Signal.
+- **`ChangeDetectionStrategy.OnPush`**: Performance optimization strategy.
