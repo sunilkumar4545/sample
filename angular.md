@@ -237,3 +237,194 @@ Below is a quick-reference list of every Angular-specific concept, keyword, or d
 - **`computed()`**: Create a derived signal.
 - **`toSignal()`**: Convert an Observable to a Signal.
 - **`ChangeDetectionStrategy.OnPush`**: Performance optimization strategy.
+
+
+
+# Angular Concepts Interview Preparation Guide
+
+This guide covers core Angular concepts used in the **MediaConnect** project. For each concept, we provide a simple explanation, how it is actually used in your project, a basic code example, and a "Perfect Interview Answer".
+
+---
+
+## 1. Decorators
+
+### `@Component`
+*   **Explanation**: The most basic decorator that marks a class as an Angular component and provides metadata like the selector, template, and styles.
+*   **In MediaConnect**: Used in every component file (e.g., `LoginComponent`, `HomeComponent`). It defines `standalone: true` to avoid using NgModules.
+*   **Simple Example**:
+    ```typescript
+    @Component({
+      selector: 'app-hello',
+      template: '<h1>Hello World</h1>',
+      standalone: true
+    })
+    export class HelloComponent {}
+    ```
+*   **🗣️ Interview Answer**: "The `@Component` decorator identifies a class as an Angular component. It allows us to configure the component's selector, HTML template, styles, and dependencies (via the `imports` array in standalone components). effectively turning a TypeScript class into a UI element."
+
+### `@Injectable`
+*   **Explanation**: Marks a class as a service that can be injected into other parts of the application.
+*   **In MediaConnect**: Used in `AuthService`, `MovieService`, etc., with `providedIn: 'root'` to make them global singletons.
+*   **Simple Example**:
+    ```typescript
+    @Injectable({ providedIn: 'root' })
+    export class DataService { ... }
+    ```
+*   **🗣️ Interview Answer**: "`@Injectable` is used to define a service class. When we pass `{ providedIn: 'root' }`, Angular creates a single instance (singleton) of the service and makes it available throughout the application, which is efficient for sharing state and logic."
+
+### `@Input`
+*   **Explanation**: Allows a parent component to pass data *down* to a child component.
+*   **In MediaConnect**: Used in `MovieCardComponent` (`@Input() movie!: Movie;`) to receive movie details from the `HomeComponent`.
+*   **Simple Example**:
+    ```typescript
+    // Child
+    @Input() title: string = '';
+    // Parent HTML
+    <app-child [title]="'Welcome'"></app-child>
+    ```
+*   **🗣️ Interview Answer**: "`@Input` is a decorator used for Parent-to-Child communication. It marks a property in the child component as settable from the parent's template using property binding syntax `[property]=value`."
+
+### `@Output`
+*   **Explanation**: Allows a child component to send data/events *up* to a parent component.
+*   **In MediaConnect**: Imported but not heavily used, but typically used for button clicks or form submissions inside child components.
+*   **Simple Example**:
+    ```typescript
+    // Child
+    @Output() notify = new EventEmitter<string>();
+    send() { this.notify.emit('Message'); }
+    // Parent HTML
+    <app-child (notify)="handleEvent($event)"></app-child>
+    ```
+*   **🗣️ Interview Answer**: "`@Output` is used for Child-to-Parent communication. It uses an `EventEmitter` to dispatch custom events that the parent can listen to using event binding syntax `(event)=handler()`."
+
+---
+
+## 2. Directives & Template Syntax
+
+### Control Flow (`@if` / `@else`, `@for`)
+*   **Explanation**: The new built-in block syntax for structural directives in Angular 17+.
+*   **In MediaConnect**: 
+    *   `@if`: Used in `LoginComponent` to show validation errors (`@if(loginForm.get('email')?.invalid)`).
+    *   `@for`: Used in `HomeComponent` to list movies (`@for(movie of movies; track movie.id)`).
+*   **Simple Example**:
+    ```html
+    @if (isAdmin) {
+      <button>Delete</button>
+    } @else {
+      <p>View Only</p>
+    }
+    
+    @for (item of items; track item.id) {
+      <li>{{ item.name }}</li>
+    }
+    ```
+*   **🗣️ Interview Answer**: "This is the new Control Flow syntax introduced in Angular 17. It replaces `*ngIf` and `*ngFor` with a cleaner, more performant syntax built directly into the template engine, removing the need to import `CommonModule` for basic logic."
+
+### `[property]` (Property Binding)
+*   **Explanation**: One-way binding from the Component (Logic) to the View (Template).
+*   **In MediaConnect**: `[disabled]="isLoading"` in `LoginComponent` disables the button when loading.
+*   **Simple Example**: `<img [src]="userImage" />`
+*   **🗣️ Interview Answer**: "Property binding, denoted by square brackets `[]`, allows us to set an element's property dynamically based on a variable in our component class."
+
+### `(event)` (Event Binding)
+*   **Explanation**: One-way binding from the View (Template) to the Component (Logic) triggered by user actions.
+*   **In MediaConnect**: `(ngSubmit)="onSubmit()"` in forms, `(click)="logout()"` in generic buttons.
+*   **Simple Example**: `<button (click)="saveData()">Save</button>`
+*   **🗣️ Interview Answer**: "Event binding, denoted by parentheses `()`, allows us to listen for DOM events like clicks or keyups and execute a method in our component class."
+
+### `[(ngModel)]` (Two-Way Binding)
+*   **Explanation**: Syncs data in both directions: View updates Model, Model updates View. Requires `FormsModule`.
+*   **In MediaConnect**: Used in `ManageSubscriptionComponent` for the credit card inputs (`[(ngModel)]="cardNumber"`).
+*   **Simple Example**: `<input [(ngModel)]="username" />`
+*   **🗣️ Interview Answer**: "Two-way binding combines property binding and event listener. It's commonly used in template-driven forms to keep an input field and a typescript variable in perfect sync."
+
+### `ngClass`
+*   **Explanation**: Adds or removes CSS classes dynamically based on conditions.
+*   **In MediaConnect**: `<div [ngClass]="responseType">` in `LoginComponent` to style alerts as red (error) or green (success).
+*   **Simple Example**: `<div [ngClass]="{ 'active': isActive }">Menu Item</div>`
+*   **🗣️ Interview Answer**: "`ngClass` is a directive that allows us to conditionally apply CSS classes. We can pass it a string, an array, or an object where keys are class names and values are boolean conditions."
+
+---
+
+## 3. Architecture & Dependency Injection
+
+### `standalone: true`
+*   **Explanation**: Allows a component to manage its own dependencies without needing an `NgModule`.
+*   **In MediaConnect**: All components (e.g., `app.ts`) use this. They import `CommonModule`, `RouterOutlet` directly in the `@Component` metadata.
+*   **🗣️ Interview Answer**: "Standalone components simplify Angular architecture by removing the need for `NgModules`. A component specifies exactly what imports it needs, making dependencies explicit and tree-shakable."
+
+### `inject()`
+*   **Explanation**: A function to inject dependencies into a class, field, or function, serving as an alternative to Constructor Injection.
+*   **In MediaConnect**: Used in `ManageSubscriptionComponent`: `authService = inject(AuthService);`.
+*   **🗣️ Interview Answer**: "`inject()` allows us to inject dependencies without declaring them in the constructor parameters. It's especially useful for functional guards, interceptors, and cleaner class fields."
+
+---
+
+## 4. Routing
+
+### `Routes` & `RouterOutlet`
+*   **Explanation**: `Routes` defines the map of URL paths to components. `RouterOutlet` is the placeholder where the matched component is rendered.
+*   **In MediaConnect**: Defined in `app.routes.ts`. `<router-outlet>` is in `app.html` to swap between Login, Home, etc.
+*   **🗣️ Interview Answer**: "Angular's Router maps URLs to components. We define a `Routes` array, and the router dynamically loads the correct component into the `<router-outlet>` placeholder based on the current browser URL."
+
+### `CanActivate` (AuthGuard)
+*   **Explanation**: Interface for a Guard that decides if a route can be activated (viewed).
+*   **In MediaConnect**: `AuthGuard` checks `isAuthenticated()`. If false, it redirects to Login.
+*   **Simple Example**:
+    ```typescript
+    canActivate() {
+      return this.authService.isLoggedIn() ? true : this.router.parseUrl('/login');
+    }
+    ```
+*   **🗣️ Interview Answer**: "`CanActivate` is a route guard interface. It runs logic before a route is loaded, allowing us to restrict access to secure pages based on authentication state or permissions."
+
+---
+
+## 5. Forms
+
+### `ReactiveFormsModule`, `FormGroup`, `Validators`
+*   **Explanation**: A technique to build forms where the logic is defined in the component class (explicit), offering better scalability than template-driven forms.
+*   **In MediaConnect**: `LoginComponent` uses `FormBuilder` to create a `FormGroup` with `Validators.required` and `Validators.email`.
+*   **Simple Example**:
+    ```typescript
+    loginForm = new FormGroup({
+      email: new FormControl('', Validators.required)
+    });
+    ```
+*   **🗣️ Interview Answer**: "Reactive Forms allow us to manage form state and validation programmatically in the component class. This provides immense control, easier testing, and better handling of complex validation logic compared to template-driven forms."
+
+---
+
+## 6. HTTP & Async
+
+### `HttpClient` & `Observable`
+*   **Explanation**: `HttpClient` is Angular's API for making HTTP requests. It returns `Observables` (streams of data).
+*   **In MediaConnect**: `AuthService` uses `http.post<AuthResponse>(url, body)` to login users.
+*   **🗣️ Interview Answer**: "`HttpClient` is Angular's mechanism for communicating with backends. It returns `Observables`, which are powerful streams that allow us to cancel requests, modify data with operators, and handle errors gracefully."
+
+### `HttpInterceptorFn`
+*   **Explanation**: A function that sits in the middle of HTTP requests/responses to transform them globally.
+*   **In MediaConnect**: `jwtInterceptor` automatically attaches the generic `Authorization: Bearer token` header to every single API call.
+*   **🗣️ Interview Answer**: "Interceptors act as middleware for HTTP requests. I use them to attach Authentication tokens to headers globally so I don't have to repeat that logic in every single service method."
+
+---
+
+## 7. Modern Angular Features
+
+### Signals (`signal`, `computed`)
+*   **Explanation**: A new reactive primitive in Angular that allows fine-grained tracking of state changes. When a signal changes, Angular knows exactly where to update the UI without traversing the whole tree.
+*   **In MediaConnect**: `ManageSubscriptionComponent` uses:
+    *   `cardNumber = signal('')`: Stores the input value.
+    *   `cardNumberError = computed(...)`: Automatically recalculates validation error whenever `cardNumber` changes.
+*   **Simple Example**:
+    ```typescript
+    count = signal(0);
+    double = computed(() => this.count() * 2);
+    increment() { this.count.set(this.count() + 1); }
+    ```
+*   **🗣️ Interview Answer**: "Signals are Angular's new system for fine-grained reactivity. Unlike RxJS subjects, Signals hold a current value and automatically notify dependency tracking contexts (like template views) when they change, leading to more efficient rendering."
+
+### `ChangeDetectionStrategy.OnPush`
+*   **Explanation**: Tells Angular to ONLY check this component for changes if an Input changes or a manual event/signal fires. It ignores global timers or unrelated events.
+*   **In MediaConnect**: Used in `ManageSubscriptionComponent` to optimize performance since it uses Signals.
+*   **🗣️ Interview Answer**: "`OnPush` strategy improves performance by detaching the component from the default change detection cycle. Angular will only re-render the component if its `@Input` references change or if a Signal inside it updates, rather than checking it on every single browser event."
