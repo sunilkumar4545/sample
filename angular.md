@@ -732,3 +732,106 @@ This comprehensive guide covers both **concepts used in your MediaConnect projec
 
 **60. How to debug an Angular app?**
 *   **Answer**: Angular DevTools (Chrome Extension), `debugger;` statement, `console.log`, and the Network Tab.
+
+
+## 1. The Authentication Flow (Step-by-Step)
+
+The authentication process involves four key files working in harmony:
+1.  **`LoginComponent`** (The UI Trigger)
+2.  **`AuthService`** (The Logic & State)
+3.  **`JwtInterceptor`** (The HTTP Middleware)
+4.  **`AuthGuard`** (The Route Protector)
+
+### Step 1: User Log In (`LoginComponent`)
+*   **File**: `src/app/components/login/login.component.ts`
+*   **Action**: User enters credentials and clicks "Login".
+*   **Code Flow**:
+    1.  The form triggers `onSubmit()`.
+    2.  It calls `this.authService.login(formData)`.
+    3.  If successful, it navigates to `/home` (or `/admin-dashboard`).
+
+### Step 2: Storing the Token (`AuthService`)
+*   **File**: `src/app/services/auth.service.ts`
+*   **Action**: The service communicates with the backend and saves the session.
+*   **Key Concept**: Uses the RxJS `tap` operator to perform side effects (saving data) without changing the response.
+*   **Code Explanation**:
+    ```typescript
+    login(request): Observable<AuthResponse> {
+        return http.post(url, request).pipe(
+            tap(response => {
+                // 1. Save Token to LocalStorage (Persistence)
+                localStorage.setItem('token', response.token);
+                
+                // 2. Update Global State (BehaviorSubject)
+                this.currentUserSubject.next(response);
+            })
+        );
+    }
+    ```
+
+### Step 3: Protecting Routes (`AuthGuard`)
+*   **File**: `src/app/guards/auth.guard.ts`
+*   **Action**: Before the Router loads `/home`, it checks this guard.
+*   **Logic**:
+    1.  Calls `authService.isAuthenticated()`.
+    2.  If `true`: Allows navigation.
+    3.  If `false`: Redirects to `/login`.
+
+---
+
+## 2. The HTTP Request Flow (Interceptor)
+
+Once logged in, every time the `HomeComponent` asks for movies, the **`JwtInterceptor`** silently does the heavy lifting.
+
+**File**: `src/app/interceptors/jwt.interceptor.ts`
+
+### How it works:
+The interceptor sits between your Service and the Backend.
+
+1.  **Intercept**: Catches the outgoing request.
+2.  **Inject**: Gets the `AuthService` to retrieve the current token.
+3.  **Clone & Modify**: Creates a copy of the request and adds the header:
+    `Authorization: Bearer eyJhbGciOi...`
+4.  **Forward**: Sends the modified request to the backend.
+
+**Visual Flow:**
+`MovieService.getMovies()` --> **INTERCEPTOR** (Adds Token) --> **API** (Server)
+
+**Why is this important?**
+Without this, you would have to manually add `headers: { Authorization: ... }` in *every single* service method (User, Movies, Subscription, etc.). The interceptor keeps your code DRY (Don't Repeat Yourself).
+
+---
+
+## 3. Data Fetching Example (`HomeComponent`)
+
+**File**: `src/app/components/home/home.component.ts`
+
+Now that Auth is set up, here is how data is actually loaded:
+
+1.  **Initialization**: `ngOnInit()` runs when the component loads.
+2.  **Trigger**: Calls `this.movieService.getAllMovies()`.
+3.  **Reflect**:
+    *   The `MovieService` returns an `Observable`.
+    *   The component `.subscribe()`s to it.
+    *   The **Interceptor** automatically adds the token.
+    *   The **Backend** validates the token and returns the list of movies.
+    *   The component updates its `movies` array.
+    *   The `@for` loop in HTML detects the change and renders the `app-movie-card` elements.
+
+---
+
+## 4. Interview Questions on this Flow
+
+**Q: Why do we use `BehaviorSubject` in `AuthService`?**
+*   **A**: `BehaviorSubject` always holds the *current* value. This means if a component (like the Navbar) initializes *after* login, it can immediately grab the current user without waiting for a new event or reading from LocalStorage manually.
+
+**Q: What happens if the Token expires?**
+*   **A**: The backend will likely return a `401 Unauthorized` or `403 Forbidden` error. We typically handle this in the `subscribe({ error: ... })` block or use a global Error Interceptor to catch 401s and redirect to the Login page automatically.
+
+**Q: Why do we clone the request in the Interceptor?**
+*   **A**: HTTP Requests in Angular are **immutable** (cannot be changed). To add a header, we *must* create a clone of the original request with the new options.
+
+**Q: Explain the difference between `localStorage` and `sessionStorage`.**
+*   **A**:
+    *   `localStorage`: Data persists even after the browser is closed and reopened (used in this project).
+    *   `sessionStorage`: Data is lost when the browser tab is closed.
