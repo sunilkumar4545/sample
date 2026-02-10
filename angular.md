@@ -446,3 +446,289 @@ This guide covers core Angular concepts used in the **MediaConnect** project. Fo
     ```
 *   **🗣️ Interview Answer**: "To handle file downloads in Angular, we fetch the file as a Blob. Then, we use the browser's native `URL.createObjectURL` API to generate a temporary link, create a hidden anchor element, trigger a click event on it to start the download, and finally revoke the object URL to prevent memory leaks."
 
+# Angular Interview Questions Master List (60+ Questions)
+
+This comprehensive guide covers both **concepts used in your MediaConnect project** and **general advanced Angular topics** that interviewers frequently ask.
+
+---
+
+## 🏗️ Section 1: Core Architecture & Standalone Components
+*(Concepts used: `standalone: true`, `app.config.ts`, `main.ts`)*
+
+**1. What is the difference between Standalone Components and NgModule-based components?**
+*   **Answer**: Standalone components (`standalone: true`) manage their own dependencies via an `imports` array directly in the `@Component` decorator. They don't need to be declared in an `NgModule`. This reduces boilerplate and makes lazy loading easier.
+*   **Demo**:
+    ```typescript
+    @Component({
+      standalone: true,
+      imports: [CommonModule],
+      template: `<h1>Hello</h1>`
+    })
+    class HelloComponent {}
+    ```
+
+**2. How do you bootstrap an application in Angular 17+ without `AppModule`?**
+*   **Answer**: We use the `bootstrapApplication` function in `main.ts`, passing the root component (e.g., `App`) and a configuration object (`ApplicationConfig`) that contains providers.
+*   **Ref**: Your `app.config.ts`.
+
+**3. What is the purpose of `CommonModule` in Angular?**
+*   **Answer**: It exports standard directives and pipes like `ngIf`, `ngFor`, `ngClass`, `DatePipe`, etc. In standalone components, you must import it manually if you rely on these legacy directives (though new syntax `@if` doesn't need it).
+
+**4. What is a Decorator in Angular?**
+*   **Answer**: A function that attaches metadata to a class. Key decorators are `@Component` (views), `@Injectable` (services), `@Directive` (behavior), and `@Pipe` (transformation).
+
+**5. What is `schemas: [CUSTOM_ELEMENTS_SCHEMA]`?**
+*   **Answer**: It allows Angular to ignore unrecognized custom HTML elements during compilation. We avoided this in your project to ensure type safety.
+
+**6. Explain the `angular.json` file.**
+*   **Answer**: It is the configuration file for the Angular CLI workspace, defining build settings, assets paths, global styles (like your `index.css`), and environment configurations.
+
+**7. What is View Encapsulation?**
+*   **Answer**: It determines if component styles can affect other parts of the app.
+    *   `Emulated` (Default): Styles are scoped to the component.
+    *   `ShadowDom`: Uses native Shadow DOM.
+    *   `None`: Styles are global.
+
+**8. What is Binding in Angular? List the types.**
+*   **Answer**:
+    *   Interpolation: `{{ value }}`
+    *   Property Binding: `[property]="value"`
+    *   Event Binding: `(event)="handler()"`
+    *   Two-Way Binding: `[(ngModel)]="value"`
+
+**9. What is the difference between Constructor Injection vs `inject()`?**
+*   **Answer**: Constructor injection declares deps in the `constructor(private srv: Service)`. The `inject(Service)` function is a newer, functional way to get dependencies that can be used in field initializers or functions without a constructor.
+*   **Ref**: Your `ManageSubscriptionComponent` uses `inject()`.
+
+**10. What is AOT (Ahead-of-Time) vs JIT (Just-in-Time) compilation?**
+*   **Answer**:
+    *   **AOT**: Compiles HTML/TS to JS *during the build phase* (faster render, smaller bundle). Default in prod.
+    *   **JIT**: Compiles in the *browser* at runtime (slower).
+
+---
+
+## ⚡ Section 2: Signals & State Management
+*(Concepts used: `signal()`, `computed()`, `BehaviorSubject`)*
+
+**11. What are Angular Signals?**
+*   **Answer**: Signals are a reactive primitive that holds a value and notifies consumers (like templates) when it changes. They enable fine-grained reactivity.
+*   **Demo**: `count = signal(0);` → access with `count()`.
+
+**12. Benefits of Signals over RxJS BehaviorSubject?**
+*   **Answer**: Signals are synchronous and glitch-free. They don't require subscription management (no `.subscribe()` or `.unsubscribe()`), making them easier to use for view state.
+
+**13. What is a `computed` signal?**
+*   **Answer**: A read-only signal that derives its value from other signals. It updates automatically only when its dependencies change.
+*   **Ref**: Your `cardNumberError = computed(...)`.
+
+**14. What is `toSignal()`?**
+*   **Answer**: An interoperability function that converts an RxJS Observable into a Signal.
+*   **Ref**: Your `userSignal = toSignal(authService.currentUser$)`.
+
+**15. What is `ChangeDetectionStrategy.OnPush`?**
+*   **Answer**: It tells Angular to skip checking this component unless an `@Input` changes by reference or a Signal updates. It improves performance massively.
+
+**16. What is Zone.js?**
+*   **Answer**: A library that patches browser async events (clicks, timeouts) to tell Angular when to run change detection. (Note: Signals aim to eventually make Zone.js optional).
+
+**17. RxJS `BehaviorSubject` vs `Subject`?**
+*   **Answer**: `BehaviorSubject` requires an initial value and always emits the current value to new subscribers. `Subject` has no initial value and only emits subsequent values.
+*   **Ref**: Your `AuthService` uses `BehaviorSubject` so new components immediately know if the user is logged in.
+
+**18. What is the AsyncPipe (`| async`)?**
+*   **Answer**: A pipe that subscribes to an Observable/Promise in the template and automatically unsubscribes when the component is destroyed.
+    *   *Example*: `<div *ngIf="user$ | async as user">`.
+
+---
+
+## 📋 Section 3: Forms (Reactive & Template Driven)
+*(Concepts used: `FormGroup`, `Validators`, `ngModel`)*
+
+**19. Reactive Forms vs Template-Driven Forms?**
+*   **Answer**:
+    *   **Reactive**: explicit logic in component class (`FormGroup`), better testing/scaling. (Used in Login).
+    *   **Template-Driven**: logic in HTML (`ngModel`), simpler for small forms. (Used in Subscription).
+
+**20. functions of `FormBuilder`?**
+*   **Answer**: A helper service to create `FormGroup` and `FormControl` instances with less boilerplate code.
+
+**21. What are common built-in Validators?**
+*   **Answer**: `Validators.required`, `Validators.email`, `Validators.minLength()`, `Validators.pattern()`.
+
+**22. How to implement Custom Validators?**
+*   **Answer**: Create a function that receives a `AbstractControl` and returns `ValidationErrors | null`.
+    *   *Code*:
+        ```typescript
+        static noSpace(control: AbstractControl) {
+            return control.value.includes(' ') ? { hasSpace: true } : null;
+        }
+        ```
+
+**23. What are `.status` and `.valid` properties?**
+*   **Answer**: Properties of a form control indicating its validation state (VALID, INVALID, PENDING, DISABLED).
+
+**24. What is `markAllAsTouched()`?**
+*   **Answer**: It triggers validation messages on all fields, commonly used when a user clicks "Submit" without filling the form.
+
+---
+
+## 🚦 Section 4: Routing & Guards
+*(Concepts used: `canActivate`, `Router`, `routes`)*
+
+**25. How do you define routes in Angular?**
+*   **Answer**: By creating an array of `Route` objects (`{ path: 'home', component: HomeComponent }`) and passing it to `provideRouter`.
+
+**26. What are the different types of Route Guards?**
+*   **Answer**:
+    *   `Include CanActivate`: Checks if we can visit a route.
+    *   `CanDeactivate`: Checks if we can leave a route (e.g., Unsaved changes).
+    *   `CanMatch`: Decides if a route definition matches.
+    *   `Resolve`: Fetches data before route activation.
+
+**27. What is Lazy Loading?**
+*   **Answer**: Using `loadComponent` or `loadChildren` to fetch component code only when the user visits that route, reducing initial bundle size.
+    *   *Example*: `{ path: 'admin', loadComponent: () => import('./admin.cmp').then(m => m.AdminCmp) }`.
+
+**28. Difference between `routerLink` and `router.navigate()`?**
+*   **Answer**: `routerLink` is a directive for HTML (`<a routerLink="/home">`), while `router.navigate()` is for programmatic navigation in TS (`this.router.navigate(['/home'])`).
+
+**29. Application is showing 404 on refresh in production. Why?**
+*   **Answer**: Angular adds routes on the client side. The server must be configured to fallback to `index.html` for unknown paths so Angular can handle the routing.
+
+---
+
+## 🌐 Section 5: HTTP & Interceptors
+*(Concepts used: `HttpClient`, `InterceptorFn`, `Blob`)*
+
+**30. What is an HTTP Interceptor?**
+*   **Answer**: Middleware that intercepts requests/responses. Used for adding Auth tokens, logging, or global error handling.
+
+**31. How to Handle Errors in HTTP?**
+*   **Answer**: Use the `.pipe(catchError(error => ...))` operator in RxJS or the `error:` callback in `.subscribe()`.
+
+**32. What is a `Blob` in HTTP context?**
+*   **Answer**: A binary large object. We set `responseType: 'blob'` to download files (PDFs, Images) directly from an API.
+
+**33. What is the difference between `mergeMap` and `switchMap`?**
+*   **Answer**:
+    *   `mergeMap`: Runs all inner observables in parallel.
+    *   `switchMap`: Cancels the previous inner observable if a new value arrives (great for search typeaheads).
+
+**34. Why do we need `subscribe()`?**
+*   **Answer**: Observables are "lazy". The HTTP request is NOT sent until you call `.subscribe()`.
+
+---
+
+## 🛠️ Section 6: Lifecycle Hooks
+*(Concepts used: `ngOnInit`)*
+
+**35. List the Lifecycle Hooks in order.**
+*   **Answer**:
+    1.  `ngOnChanges` (Input updates)
+    2.  `ngOnInit` (Initialization)
+    3.  `ngDoCheck` (Custom change detection)
+    4.  `ngAfterContentInit`
+    5.  `ngAfterContentChecked`
+    6.  `ngAfterViewInit` (View rendered)
+    7.  `ngAfterViewChecked`
+    8.  `ngOnDestroy` (Cleanup)
+
+**36. `ngOnInit` vs Constructor?**
+*   **Answer**: Constructor is for JS class initialization (DI). `ngOnInit` is for Angular initialization (fetching data like `getMovies()`) after inputs are bound.
+
+**37. When to use `ngOnDestroy`?**
+*   **Answer**: To unsubscribe from Observables, detach event listeners, or stop timers/intervals to prevent memory leaks.
+
+---
+
+## 🚀 Section 7: Advanced & Miscellaneous
+
+**38. What is Content Projection (`ng-content`)?**
+*   **Answer**: It allows you to insert HTML content from a parent into a designated slot in the child component.
+    *   *Usage*: `<app-card> <h1>Title</h1> </app-card>` -> Child uses `<ng-content></ng-content>` to display `<h1>`.
+
+**39. What is `ViewChild`?**
+*   **Answer**: A decorator to access a child component, directive, or DOM element inside the parent component's class.
+
+**40. What is a Pipe (`|`)?**
+*   **Answer**: A class to transform data in the template (e.g., `{{ date | date:'short' }}`).
+    *   *Pure Pipe*: Only re-runs if input reference changes (fast).
+    *   *Impure Pipe*: Re-runs on every detection cycle (resource heavy).
+
+**41. Types of Directives?**
+*   **Answer**:
+    1.  **Component**: Directive with a template.
+    2.  **Structural**: Changes DOM layout (`@if`, `@for`).
+    3.  **Attribute**: Changes appearance/behavior (`ngClass`, `ngStyle`).
+
+**42. What is `track` in the new `@for` loop?**
+*   **Answer**: It replaces `trackBy`. It provides a unique key (like `id`) for items in a list so Angular can optimize DOM updates when the list changes.
+
+**43. What is Hydration (SSR)?**
+*   **Answer**: In Angular 16+, hydration allows the client to "take over" server-rendered HTML without flickering or re-rendering the DOM from scratch.
+
+**44. What is Deferrable Views (`@defer`)?**
+*   **Answer**: A block (`@defer`) that allows you to lazy load the content inside it based on triggers (e.g., `@defer (on viewport)`) without complex routing.
+
+**45. How do you optimize an Angular App?**
+*   **Answer**:
+    1.  Use `OnPush` change detection.
+    2.  Lazy load routes.
+    3.  Use `@defer` for heavy components.
+    4.  Optimize images.
+    5.  Prevent memory leaks (unsubscribe).
+
+**46. What is the standard way to communicate between components?**
+*   **Answer**:
+    1.  Parent → Child: `@Input`.
+    2.  Child → Parent: `@Output` / `EventEmitter`.
+    3.  Sibling/Any: Shared Service (RxJS/Signals).
+
+**47. What is `environment.ts`?**
+*   **Answer**: A file to store config variables (API URLs, keys) that change between Dev and Prod builds.
+
+**48. Why use TypeScript with Angular?**
+*   **Answer**: Strong typing prevents runtime errors, provides better IDE support (Intellisense), and makes refactoring safer.
+
+**49. What is `HostListener`?**
+*   **Answer**: A decorator that declares a DOM event to listen directly on the component's host element (e.g., listening for window scroll).
+
+**50. What is `HostBinding`?**
+*   **Answer**: Allows you to set properties of the host element (like adding a class) from within the component class.
+
+---
+
+## 🔍 Section 8: Rapid Fire / Scenario Questions
+
+**51. User reports the UI freezes when typing. Probable cause?**
+*   **Answer**: Likely performing heavy calculation on every keystroke in a default Change Detection cycle or an impure pipe. Fix: Use `OnPush` or `debounceTime` in RxJS.
+
+**52. How to prevent a user from leaving a form with unsaved changes?**
+*   **Answer**: Use a `CanDeactivate` guard that checks the `isDirty` state of the form.
+
+**53. How to pass data between unlinked components (e.g., Header and Settings)?**
+*   **Answer**: Use a Shared Service with a `BehaviorSubject` or `Signal`.
+
+**54. Diff between `ng-template` and `ng-container`?**
+*   **Answer**:
+    *   `ng-template`: Defines a template that is NOT rendered by default (used in `else` blocks).
+    *   `ng-container`: A logical container that doesn't put an element in the DOM (good for grouping `@if` or loops).
+
+**55. How to handle multiple HTTP calls that must finish before loading the page?**
+*   **Answer**: Use `forkJoin([obs1$, obs2$])`.
+
+**56. How to cancel an ongoing HTTP request?**
+*   **Answer**: Unsubscribe from the observable.
+
+**57. What is a Resolver?**
+*   **Answer**: A script that fetches data *before* the route component is initialized, ensuring data is ready when the page loads.
+
+**58. Explain `ChangeDetectorRef.detectChanges()`?**
+*   **Answer**: Manually triggers a change detection cycle. Used when Angular doesn't auto-detect a change (e.g., updates inside a third-party library or outside Zone.js).
+*   **Ref**: You used this in `ProfileComponent`.
+
+**59. What is the difference between `package.json` and `package-lock.json`?**
+*   **Answer**: `package.json` lists version ranges. `package-lock.json` locks the *exact* versions installed to ensure consistency across teams.
+
+**60. How to debug an Angular app?**
+*   **Answer**: Angular DevTools (Chrome Extension), `debugger;` statement, `console.log`, and the Network Tab.
