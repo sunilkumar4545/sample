@@ -179,3 +179,143 @@ The specific interface in Spring Security that actually performs the check: "Do 
 5.  **Backend (Controller)**: The request finally reaches the `PlansController`.
     *   The controller returns the list of plans.
 6.  **Frontend**: Displays the plans.
+
+
+# JWT Filter Logic: A Deep Dive
+
+This document provides a line-by-line explanation of the `doFilterInternal` method in `JwtFilter.java`. This method is the "Gatekeeper" of your backend, intercepting every single request to check for a valid ID card (the Token).
+
+---
+
+## 🏛️ The Big Picture
+
+Think of `JwtFilter` as the security guard at the entrance of a building.
+1.  **Request Arrives**: Someone tries to enter (`GET /api/movies`).
+2.  **Check Header**: The guard asks, "Do you have your ID badge?" (`Authorization: Bearer <token>`).
+3.  **Validate**: The guard scans the badge. Is it fake? Is it expired?
+4.  **Grant Access**: Ifvalid, the guard updates the **Security Log** (`SecurityContextHolder`) saying "User ABC is inside".
+5.  **Proceed**: The user is allowed to go to the front desk (`Controller`).
+
+---
+
+## 🔍 Line-by-Line Code Walkthrough
+
+```java
+@Override
+protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
+        throws ServletException, IOException {
+```
+*   **Concept**: `OncePerRequestFilter`. This ensures this logic runs exactly once for every API call.
+*   **Arguments**:
+    *   `request`: The incoming HTTP packet (Headers, Body, URL).
+    *   `response`: The outgoing reply we are building.
+    *   `chain`: The list of other filters to run after this one (like CORS, Logging).
+
+### Step 1: Extract the Header
+
+```java
+final String authHeader = request.getHeader("Authorization");
+
+String email = null;
+String jwt = null;
+```
+*   **Logic**: We look for a header named `Authorization`.
+*   **Example Header**: `Authorization: Bearer eyJhbGciOiJIUzI1Ni...`
+
+### Step 2: Parse the Token
+
+```java
+if (authHeader != null && authHeader.startsWith("Bearer ")) {
+    jwt = authHeader.substring(7); // Remove "Bearer " prefix
+    try {
+        email = jwtUtil.extractUsername(jwt);
+    } catch (Exception e) {
+        // Token extraction failed
+    }
+}
+```
+*   **Why `substring(7)`?**: "Bearer " is exactly 7 characters (6 letters + 1 space). We want only the messy string part after it.
+*   **Action**: We ask `jwtUtil` to blindly read the email inside the token. Note: We haven't verified if the signature is valid yet, we just want to know *who* claims to be knocking.
+
+### Step 3: Check Authentication Status
+
+```java
+if (email != null && SecurityContextHolder.getContext().getAuthentication() == null) {
+```
+*   **Condition A**: `email != null`: We successfully found a token.
+*   **Condition B**: `SecurityContextHolder...authentication == null`: The user is NOT already logged in for this request.
+    *   *Why?* Since we are stateless, every request starts as "Not Logged In". We must prove it every time.
+
+### Step 4: Load User from Database
+
+```java
+    UserDetails userDetails = this.userDetailsService.loadUserByUsername(email);
+```
+*   **Action**: We look up the full user record (Password, Role/Authorities) from the MySQL database using the email we found in the token.
+*   **Variable**: `userDetails` sits here, waiting to be compared.
+
+### Step 5: The Crucial Validation
+
+```java
+    if (jwtUtil.validateToken(jwt, userDetails.getUsername())) {
+```
+*   **Action**: We pass the **Raw Token** (`jwt`) and the **Database Username** to `jwtUtil.validateToken()`.
+*   **Checks Performed**:
+    1.  **Expiration**: Is `Date.now() < Token.Expiration`?
+    2.  **Signature**: Does the token's mathematical signature match our Server's Secret Key? (Prevents tampering).
+    3.  **User Match**: Does the token belong to the user we just loaded?
+
+### Step 6: Create the "Ticket" (Authentication Token)
+
+```java
+        UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
+                userDetails, null, userDetails.getAuthorities());
+                
+        authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+```
+*   **Concept**: `UsernamePasswordAuthenticationToken`.
+*   **Explanation**: This is NOT the JWT. This is an internal Spring Security object that acts as a "Authenticated Session Ticket" for the duration of just this one request.
+*   **Parameters**:
+    1.  `userDetails`: The user object (Who they are).
+    2.  `null`: Credentials (we erase the password for safety).
+    3.  `authorities`: The roles (e.g., `ROLE_ADMIN`) so `@PreAuthorize` can work.
+
+### Step 7: Stamp the Ticket
+
+```java
+        SecurityContextHolder.getContext().setAuthentication(authToken);
+        logger.info("JWT token validated successfully for user: {}", email);
+```
+*   **Crucial Step**: We place the `authToken` into the global `SecurityContext`.
+*   **Result**: From line 56 onwards, anywhere in the app (Controllers, Services) calls `SecurityContextHolder.getContext().getAuthentication()`, it will find this User. **The user is now officially logged in.**
+
+### Step 8: Allow Passage
+
+```java
+chain.doFilter(request, response);
+```
+*   **Action**: We are done. We pass the request to the next filter. Eventually, it reaches `MovieController`.
+
+---
+
+## 📝 Simple Real-World Analogy
+
+Imagine checking into a Flight:
+
+1.  **Header Check**: You walk to TSA and show your Boarding Pass (Token).
+2.  **Extract Info**: The agent reads "John Doe" (Email) from the pass.
+3.  **DB Check**: The agent looks up "John Doe" in the Flight Database (`loadUserByUsername`).
+4.  **Validation**:
+    *   Is the flight today? (Expiration).
+    *   Is the pass printed on valid paper? (Signature).
+    *   Does the face match the ID? (User Match).
+5.  **Context**: The agent stamps "Security Cleared" on your pass (`setAuthentication`).
+6.  **Filter Chain**: You proceed to the Gate (`Controller`).
+
+---
+
+## 🗣️ Interview Explanation
+
+"In the `doFilterInternal` method, I first extract the JWT from the `Authorization` header by stripping the 'Bearer ' prefix. I decode the username (email) from the token. If a username exists and the user isn't already authenticated in the current context, I fetch the user's details from the database.
+
+Then, I perform a critical validation step: checking if the JWT signature is valid and if it matches the user details. If valid, I create a `UsernamePasswordAuthenticationToken`—Spring's internal representation of a logged-in user—populated with their authorities (Roles). Finally, I ensure to set this token in the `SecurityContextHolder`, effectively logging the user in for the duration of that request, before passing control up the chain."
